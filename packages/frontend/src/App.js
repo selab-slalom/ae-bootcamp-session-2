@@ -182,7 +182,12 @@ function App() {
         <main className="app-content">
           {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
-          <Box component="form" className="task-create" onSubmit={handleSubmit}>
+          <Box
+            component="form"
+            className="task-create"
+            aria-label="Add task"
+            onSubmit={handleSubmit}
+          >
             <div className="section-heading">
               <Typography component="h2" variant="h2">New task</Typography>
             </div>
@@ -232,7 +237,12 @@ function App() {
                 {items.map(item => (
                   <li className="task-row" key={item.id}>
                     {editingId === item.id ? (
-                      <Box component="form" className="task-edit-form" onSubmit={handleSaveEdit}>
+                      <Box
+                        component="form"
+                        className="task-edit-form"
+                        aria-label={`Edit ${item.name}`}
+                        onSubmit={handleSaveEdit}
+                      >
                         <TextField
                           label="Task name"
                           value={editValues.name}

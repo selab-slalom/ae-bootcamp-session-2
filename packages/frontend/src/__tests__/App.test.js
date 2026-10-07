@@ -7,10 +7,13 @@ import App from '../App';
 
 let mockItems;
 let nextItemId;
+let postRequests;
+let patchRequests;
 
 const server = setupServer(
   rest.get('/api/items', (req, res, ctx) => res(ctx.json(mockItems))),
   rest.post('/api/items', (req, res, ctx) => {
+    postRequests += 1;
     const item = {
       id: nextItemId++,
       name: req.body.name,
@@ -21,6 +24,7 @@ const server = setupServer(
     return res(ctx.status(201), ctx.json(item));
   }),
   rest.patch('/api/items/:id', (req, res, ctx) => {
+    patchRequests += 1;
     const item = mockItems.find(candidate => String(candidate.id) === req.params.id);
     if (!item) return res(ctx.status(404), ctx.json({ error: 'Item not found' }));
 
@@ -50,6 +54,8 @@ beforeEach(() => {
     },
   ];
   nextItemId = 3;
+  postRequests = 0;
+  patchRequests = 0;
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
@@ -86,6 +92,31 @@ describe('App Component', () => {
     expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('New Test Item');
   });
 
+  test('does not submit a task with an empty name', async () => {
+    render(<App />);
+    await screen.findByText('Test Item 1');
+
+    fireEvent.submit(screen.getByRole('form', { name: 'Add task' }));
+
+    expect(postRequests).toBe(0);
+  });
+
+  test('shows an error and re-enables the form when task creation fails', async () => {
+    const user = userEvent.setup();
+    server.use(
+      rest.post('/api/items', (req, res, ctx) => (
+        res(ctx.status(500), ctx.json({ error: 'create failed' }))
+      ))
+    );
+    render(<App />);
+
+    await user.type(screen.getByRole('textbox', { name: 'Task name' }), 'Failed task');
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not add task: create failed');
+    expect(screen.getByRole('button', { name: 'Add task' })).toBeEnabled();
+  });
+
   test('edits a task name and due date', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -103,6 +134,39 @@ describe('App Component', () => {
     expect(screen.getByText('Nov 12, 2026')).toBeInTheDocument();
   });
 
+  test('does not save a blank edit and can cancel editing', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText('Test Item 2');
+
+    await user.click(screen.getByRole('button', { name: 'Edit Test Item 2' }));
+    const nameField = screen.getAllByRole('textbox', { name: 'Task name' })[1];
+    await user.clear(nameField);
+    fireEvent.submit(screen.getByRole('form', { name: 'Edit Test Item 2' }));
+
+    expect(patchRequests).toBe(0);
+    expect(screen.getByRole('button', { name: 'Save Test Item 2' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Cancel editing Test Item 2' }));
+    expect(screen.getByText('Test Item 2')).toBeInTheDocument();
+  });
+
+  test('keeps edit mode and shows an error when saving fails', async () => {
+    const user = userEvent.setup();
+    server.use(
+      rest.patch('/api/items/:id', (req, res, ctx) => (
+        res(ctx.status(500), ctx.json({ error: 'save failed' }))
+      ))
+    );
+    render(<App />);
+    await screen.findByText('Test Item 2');
+
+    await user.click(screen.getByRole('button', { name: 'Edit Test Item 2' }));
+    await user.click(screen.getByRole('button', { name: 'Save Test Item 2' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not save task: save failed');
+    expect(screen.getByRole('button', { name: 'Save Test Item 2' })).toBeInTheDocument();
+  });
+
   test('deletes a task', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -114,6 +178,22 @@ describe('App Component', () => {
       expect(screen.queryByText('Test Item 1')).not.toBeInTheDocument();
     });
     expect(mockItems.map(item => item.name)).not.toContain('Test Item 1');
+  });
+
+  test('keeps a task and shows an error when deletion fails', async () => {
+    const user = userEvent.setup();
+    server.use(
+      rest.delete('/api/items/:id', (req, res, ctx) => (
+        res(ctx.status(500), ctx.json({ error: 'delete failed' }))
+      ))
+    );
+    render(<App />);
+    await screen.findByText('Test Item 1');
+
+    await user.click(screen.getByRole('button', { name: 'Delete Test Item 1' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not delete task: delete failed');
+    expect(screen.getByText('Test Item 1')).toBeInTheDocument();
   });
 
   test('handles API error', async () => {
