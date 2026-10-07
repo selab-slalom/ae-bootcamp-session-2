@@ -10,6 +10,7 @@
     "start": "concurrently \"npm run start:frontend\" \"npm run start:backend\"",
     "start:frontend": "npm run start --workspace=frontend",
     "start:backend": "npm run start --workspace=backend",
+    "lint": "npm run lint --workspace=frontend",
     "test": "npm run test:frontend && npm run test:backend",
     "test:integration": "npm run test:integration --workspace=backend",
     "test:e2e": "npx playwright test",
@@ -19,11 +20,13 @@
     "test:backend": "npm run test --workspace=backend",
     "install:all": "npm install && npm run install:frontend && npm run install:backend",
     "install:frontend": "cd packages/frontend && npm install",
-    "install:backend": "cd packages/backend && npm install"
+    "install:backend": "cd packages/backend && npm install",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
     "@playwright/test": "^1.40.0",
+    "concurrently": "^8.2.2",
+    "husky": "^9.1.7",
     "wait-on": "^7.2.0"
   }
 }
