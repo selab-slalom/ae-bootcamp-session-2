@@ -1,0 +1,175 @@
+name: Step 2-6 # Validate tests
+
+on:
+  push:
+    branches:
+      - feature/context
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+
+jobs:
+  find_exercise:
+    name: Find Exercise Issue
+    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.4.0
+  
+  check_step_work:
+    name: Check step work
+    runs-on: ubuntu-latest
+    needs: [find_exercise]
+    env:
+      ISSUE_URL: ${{ needs.find_exercise.outputs.issue-url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Get response templates
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.4.0
+
+      - name: Update comment - checking work
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body-file exercise-toolkit/markdown-templates/step-feedback/checking-work.md \
+            --edit-last
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+        # START: Check practical exercise
+
+      - name: Check for unit tests
+        id: check_unit_tests
+        continue-on-error: true
+        run: |
+          # Check for existing unit test files
+          if [ ! -f packages/backend/__tests__/app.test.js ] || [ ! -f packages/frontend/src/__tests__/App.test.js ]; then
+            echo "Unit test files not found! Expected app.test.js files in both backend and frontend"
+            exit 1
+          fi
+
+      - name: Check for integration tests
+        id: check_integration_tests
+        continue-on-error: true
+        run: |
+          # Check for any .test.js or .test.ts files in integration directory
+          if [ ! -d packages/backend/__tests__/integration ]; then
+            echo "Integration tests directory not found"
+            exit 1
+          fi
+          if ! find packages/backend/__tests__/integration -name "*.test.js" -o -name "*.test.ts" | head -1 | grep -q .; then
+            echo "No integration test files found"
+            exit 1
+          fi
+
+      - name: Check for E2E tests
+        id: check_e2e_tests
+        continue-on-error: true
+        run: |
+          # Check for any .spec.js or .spec.ts files anywhere in the project
+          if ! find . -name "*.spec.js" -o -name "*.spec.ts" | head -1 | grep -q .; then
+            echo "No E2E test files found"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start servers for E2E tests
+        run: |
+          # Extract default backend port from source code
+          BACKEND_PORT=$(grep -oE '\|\|[[:space:]]*[0-9]+' packages/backend/src/index.js | grep -oE '[0-9]+' || echo "3030")
+          # Frontend uses React default or PORT env var
+          FRONTEND_PORT="${PORT:-3000}"
+          
+          echo "Starting servers - Frontend: $FRONTEND_PORT, Backend: $BACKEND_PORT"
+          
+          npm run start &
+          npx wait-on --timeout 120000 http://localhost:$FRONTEND_PORT http://localhost:$BACKEND_PORT
+        timeout-minutes: 3
+
+      - name: Run unit/integration tests
+        id: run_tests
+        continue-on-error: true
+        run: npm test
+
+      - name: Build message - step results
+        id: build-message-step-results
+        uses: skills/action-text-variables@v2
+        with:
+          template-file: exercise-toolkit/markdown-templates/step-feedback/step-results-table.md
+          template-vars: |
+            step_number: 2-6
+            passed: ${{ steps.check_unit_tests.outcome == 'success' && steps.check_integration_tests.outcome == 'success' && steps.check_e2e_tests.outcome == 'success' && steps.run_tests.outcome == 'success' }}
+            results_table:
+              - description: "Unit test files should exist (app.test.js in backend and App.test.js in frontend)."
+                passed: ${{ steps.check_unit_tests.outcome == 'success' }}
+                error_message: "Unit test files not found. Expected app.test.js in \`packages/backend/__tests__/\` and App.test.js in \`packages/frontend/src/__tests__/\`."
+              - description: "Integration tests should exist (*.test.js files in \`packages/backend/__tests__/integration/\`)."
+                passed: ${{ steps.check_integration_tests.outcome == 'success' }}
+                error_message: "Integration test files not found. Expected intelligently named *.test.js files in \`packages/backend/__tests__/integration/\`."
+              - description: "E2E tests should exist (*.spec.js files in tests/e2e/)."
+                passed: ${{ steps.check_e2e_tests.outcome == 'success' }}
+                error_message: "E2E test files not found. Expected intelligently named *.spec.js files in tests/e2e/."
+              - description: "Unit/Integration test suite should pass (npm test)."
+                passed: ${{ steps.run_tests.outcome == 'success' }}
+                error_message: "Test suite failed. Review failing tests and guidelines."
+
+      - name: Create comment - step results
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body "$COMMENT_BODY" \
+            --edit-last
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ steps.build-message-step-results.outputs.updated-text }}
+
+      - name: Fail job if not all checks passed
+        if: contains(steps.*.outcome, 'failure')
+        run: exit 1
+
+      # END: Check practical exercise
+
+      - name: Success
+        run: echo "Build with context checks passed."
+      
+  post_next_step_content:
+    name: Post next step content
+    needs: [find_exercise, check_step_work]
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_URL: ${{ needs.find_exercise.outputs.issue-url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get response templates
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.4.0
+
+      - name: Create comment - add step content
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body-file ".github/steps/2-x-review.md"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Disable current workflow
+        run: |
+          gh workflow disable "Step 2-6"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

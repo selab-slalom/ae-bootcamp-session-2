@@ -1,0 +1,14 @@
+{
+  "name": "Copilot Bootcamp",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list && rm -f .git/hooks/pre-push .git/hooks/post-checkout .git/hooks/post-commit .git/hooks/post-merge && npm install && npx playwright install --with-deps chromium",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "GitHub.copilot",
+        "ms-playwright.playwright"
+      ]
+    }
+  },
+  "forwardPorts": [3000, 3030]
+}

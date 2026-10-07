@@ -1,0 +1,149 @@
+name: Step 2-2 # Add UI Guidelines
+
+on:
+  push:
+    branches:
+      - feature/context
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+jobs:
+  find_exercise:
+    name: Find Exercise Issue
+    uses: skills/exercise-toolkit/.github/workflows/find-exercise-issue.yml@v0.4.0
+  
+  check_step_work:
+    name: Check step work
+    runs-on: ubuntu-latest
+    needs: [find_exercise]
+    env:
+      ISSUE_URL: ${{ needs.find_exercise.outputs.issue-url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Get response templates
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.4.0
+
+      - name: Update comment - checking work
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body-file exercise-toolkit/markdown-templates/step-feedback/checking-work.md \
+            --edit-last
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+        # START: Check practical exercise
+
+      - name: Check for ui-guidelines.md
+        id: check_ui_guidelines
+        continue-on-error: true
+        run: |
+          if [ ! -f docs/ui-guidelines.md ]; then
+            echo "docs/ui-guidelines.md not found!"
+            exit 1
+          fi
+
+      - name: Check copilot-instructions.md references ui-guidelines
+        id: check_copilot_instructions
+        continue-on-error: true
+        run: |
+          grep -q 'ui-guidelines.md' .github/copilot-instructions.md
+
+      - name: Build message - step results
+        id: build-message-step-results
+        uses: skills/action-text-variables@v2
+        with:
+          template-file: exercise-toolkit/markdown-templates/step-feedback/step-results-table.md
+          template-vars: |
+            step_number: 2-2
+            passed: ${{ steps.check_ui_guidelines.outcome == 'success' && steps.check_copilot_instructions.outcome == 'success' }}
+            results_table:
+              - description: "The file 'ui-guidelines.md' should exist under `docs/` folder and describe the UI requirements."
+                passed: ${{ steps.check_ui_guidelines.outcome == 'success' }}
+                error_message: "The file 'docs/ui-guidelines.md' was not found or does not describe all the required UI guidelines."
+              - description: "The file '.github/copilot-instructions.md' should reference 'ui-guidelines.md'"
+                passed: ${{ steps.check_copilot_instructions.outcome == 'success' }}
+                error_message: "The file '.github/copilot-instructions.md' does not reference 'ui-guidelines.md'."
+
+      - name: Create comment - step results
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body "$COMMENT_BODY" \
+            --edit-last
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ steps.build-message-step-results.outputs.updated-text }}
+
+      - name: Fail job if not all checks passed
+        if: contains(steps.*.outcome, 'failure')
+        run: exit 1
+
+      # END: Check practical exercise
+
+      - name: Build message - step finished
+        id: build-message-step-finish
+        uses: skills/action-text-variables@v2
+        with:
+          template-file: exercise-toolkit/markdown-templates/step-feedback/step-finished-prepare-next-step.md
+          template-vars: |
+            next_step_number: 2-3
+
+      - name: Update comment - step finished
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body "$ISSUE_BODY" \
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_BODY: ${{ steps.build-message-step-finish.outputs.updated-text }}
+
+      - name: Success
+        run: echo "UI guidelines and Copilot instructions are present and correct."
+      
+  post_next_step_content:
+    name: Post next step content
+    needs: [find_exercise, check_step_work]
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_URL: ${{ needs.find_exercise.outputs.issue-url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get response templates
+        uses: actions/checkout@v4
+        with:
+          repository: skills/exercise-toolkit
+          path: exercise-toolkit
+          ref: v0.4.0
+
+      - name: Create comment - add step content
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body-file ".github/steps/2-3-add-testing-guidelines.md"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create comment - watching for progress
+        run: |
+          gh issue comment "$ISSUE_URL" \
+            --body-file exercise-toolkit/markdown-templates/step-feedback/watching-for-progress.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Disable current workflow and enable next one
+        run: |
+          gh workflow disable "Step 2-2"
+          gh workflow enable "Step 2-3"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
